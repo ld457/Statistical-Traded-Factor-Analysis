@@ -1,0 +1,735 @@
+---
+title: "Project"
+author: "Mingcan Yuan (my463), Lihua Dong (ld457)"
+date: "2018/5/7"
+output: html_document
+---
+
+#1 Regime Switching
+Briefly, we'd like to use the data from 2000 in order to catch the newly economic and market property. And we would compare the swiching model from different data like GNP or S&P 500 index, with NBER classifications of recessions.
+
+## 1 Estimate States with GNP
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+gnp = read.csv('GNP.csv', header = TRUE)
+plot(gnp[,1],gnp[,2])
+````
+We can see that gnp data always increase and it would be hard for us to divide two states according to the gnp.  
+So we need to consider the return of the gnp, which indicate the increase speed of the GNP, hoping it could reflect the national ecomics.  
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+n = length(gnp[,2])
+re_gnp = gnp[2:n,2]/gnp[1:(n - 1),2] - 1
+plot(gnp[-1,1],re_gnp)
+````
+It seems much more reliable, which show large heteroskedasticity.  
+We may use the data from 2000, which are more reliable.
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+# install.packages("fMarkovSwitching", 
+#                  repos="http://R-Forge.R-project.org")
+library(fMarkovSwitching)
+
+data = re_gnp[212:283]
+dep = matrix(data, nrow = length(data))
+indep = matrix(rep(1, length(dep)),nrow = length(dep))
+S = c(1)
+k = 2
+disIn = 'Normal' #Assumption!!!!
+MS_gnp <- MS_Regress_Fit(dep,indep,S,k)
+print(MS_gnp)
+````
+The model identify two volatility regimes from return of the gnp. In the low volatility regime, the standard deviation of the return is 0.54%, and in the high volatility regime, the value of the standard deviation is 1.14%, which has higher uncertainty. For the expected return, the low volatility state has 1.08% average return, while for high volatility state, the average return is -0.74%.  
+This result tell us that GNP goes up slower than it goes down, which means for American economy, it would crash much faster than boosting.  
+And also, we could obeserve the expected duration of regime, that boom tends to last for 55 quanters, which is much longer thant recession.
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+
+smooth.prob = as.numeric(MS_gnp@smoothProb[,1])
+df.to.plot = data.frame(smooth.prob = smooth.prob,ref.date = gnp[213:284,1],price = gnp[213:284,2])
+df.to.plot$States = ifelse(df.to.plot$smooth.prob > 0.5,'State 1','State 2')
+p = ggplot(df.to.plot,aes(y=price, x =ref.date, color=States)) + geom_point()
+
+gnp_states = df.to.plot$States
+print(p)
+````
+Clearly, the boom last for a long time in american and recession only happened during the 2008 financial crisis.
+
+## 2 Estiamte with S&P 500
+Generaly, S&P 500 index would be much more volatile compared with GNP, which means the switching model using S&P 500 may not catch the recession but some oscillation of the market.
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+library('quantmod')
+snp = getSymbols("^GSPC",auto.assign = FALSE, from = "2000-01-01", to = "2017-12-31")
+snp = snp[,6]
+date = time(snp)
+plot(snp)
+````
+We ues the same method above. Get the return of SNP.
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+r_snp = coredata(na.omit(diff(snp))) / coredata(snp[-length(snp)])
+plot(date[-1],r_snp)
+````
+Obviously, it didn't show heteroskedastisity but volatility clustering.
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+library(fMarkovSwitching)
+
+data = r_snp
+dep = matrix(data, nrow = length(data))
+indep = matrix(rep(1, length(dep)),nrow = length(dep))
+S = c(1)
+k = 2
+disIn = 'Normal' #Assumption!!!!
+MS_snp <- MS_Regress_Fit(dep,indep,S,k)
+print(MS_snp)
+````
+Obviously, the report shows that S&P 500 can't be used to do regime switching, for the data is too close to each other. And we can't seperate them with switching model. So the duration of regime would be too short to implement.  
+Actaully, we can check it with plot by states:
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+snp = coredata(snp)
+smooth.prob = as.numeric(MS_snp@smoothProb[,1])
+df.to.plot = data.frame(smooth.prob = smooth.prob,ref.date = date[-1],price = snp[2:length(snp)])
+df.to.plot$States = ifelse(df.to.plot$smooth.prob > 0.5,'State 1','State 2')
+p = ggplot(df.to.plot,aes(y=price, x =ref.date,color=States)) + geom_point()
+
+print(p)
+````
+Obviouly, when we use the return of S&P 500 index, the swiching model is more likely to capture the shock instead of the boom and recession. In other word, the estimated switching model with return of S&P 500 reflect the oscilation of market, but we need macro intuition instead of micro. Also, the short period of duration is not good for us to construct our portfolio.  
+
+As we all know, the equity return follows log normal distribution instead of normal distribution. Then we could try with log return of S&P 500. 
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+log_r = na.omit(diff(snp))
+plot(date[-1],log_r)
+````
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+data = log_r
+dep = matrix(data, nrow = length(data))
+indep = matrix(rep(1, length(dep)),nrow = length(dep))
+S = c(1)
+k = 2
+disIn = 'Normal' #Assumption!!!!
+MS_snp <- MS_Regress_Fit(dep,indep,S,k)
+print(MS_snp)
+````
+
+
+```{r echo = FALSE, warning = FALSE, message=FALSE}
+snp = coredata(snp)
+smooth.prob = as.numeric(MS_snp@smoothProb[,1])
+df.to.plot = data.frame(smooth.prob = smooth.prob,ref.date = date[-1],price = snp[2:length(snp)])
+df.to.plot$States = ifelse(df.to.plot$smooth.prob > 0.5,'State 1','State 2')
+p = ggplot(df.to.plot,aes(y=price, x = ref.date,color=States)) + geom_point()
+
+print(p)
+````
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+snp = getSymbols("^GSPC",auto.assign = FALSE, from = "2000-01-01", to = "2017-12-31")
+snp = snp[,6]
+snp_month = to.monthly(snp)
+snp_month = snp_month[,4]
+names(snp_month) = c("price")
+r_snp_mon = na.omit(diff(snp_month) / lag(snp_month))
+date = time(r_snp_mon)
+
+dep = matrix(r_snp_mon, nrow = length(r_snp_mon))
+indep = matrix(rep(1, length(dep)),nrow = length(dep))
+
+S <- c(1)   # where to switch (in this case in the only indep)
+k <- 2      # number of states
+distIn <- "Normal" #distribution assumption
+
+MS_snp <- MS_Regress_Fit(dep,indep,S,k)
+print(MS_snp)
+```
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+smooth.prob = as.numeric(MS_snp@smoothProb[,1])
+
+df.to.plot <- data.frame(smooth.prob = smooth.prob, 
+                         ref.date = date,
+                         price = snp_month[2:nrow(snp_month)])
+df.to.plot$States <- ifelse(df.to.plot$smooth.prob > 0.5,
+                            'State 1','State 2')
+p <- ggplot(df.to.plot,aes(y=price, x =ref.date, color=States)) +geom_point()
+snp_states = df.to.plot$States
+print(p)
+```
+Obviously, monthly return of S&P index could give better classification for market, and the properties of different state are significantly different from each other.  
+
+To sum up, if we want to classify the market into different states, we'd better use monthly data.
+
+
+## 3 NBER Classification
+We can download the data from NBER from the website, to check if our classification matches the classification of NBER.  
+
+As what we find in NBER, there are only two recessionse happened after 2000. The first recession happend from March 2001 to November 2001, which is too short and happened in the beginning of our in-samplel data. So we can't predict it using switching region model.
+
+The second recession happend from December 2007 to June 2009, which can be sperated perfectly using GNP data. But when we use the market data, the volatility is much higher than macro, so it fits not well with NBER.
+
+# PCA by Regime
+We would like to use monthly Fama-Bliss data for holding period returns instead of FRED data, for Fama Bliss bonds are fully taxable and non-callable. So we can focus on maturity date to classify them.
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield = read.csv('yield.csv', header = TRUE)
+yield
+````
+
+Obviously, we can seperate data into 2 types, one for the maturity date increase with half year and another one for maturity date increase with a year. After checking the data, we can find that former has more missing data and required amend, so we prefer to use the Fama Bliss data by one year increment first to do the PCA.
+
+## Monthly Fama-Bliss Data by one year
+
+### In-Sample PCA
+Let do PCA without regime first.
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield_1 = yield[14:18]
+options(digits=5)
+pca = prcomp(yield_1)
+summary(pca)
+```
+
+We can see that PC1 has 97% of the variance, which is high enough and we don't need to check other PCs.  
+
+Let's see the component of PC1.
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+time = c(1,2,3,4,5)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+````
+From the plot above, we can see that maturity from 4 years to 5 years is the major component of PC_1. And the percentage increase with maturity grows.
+
+### PCA with Different Regime with GNP
+Firstly we select the data from 2000 to 2017, using GNP classification to do PCA in differernt states.
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield_1 = yield_1[577:792,]
+s = rep(TRUE, length(yield_1[,1]))
+for (i in 1: length(yield_1[,1])-1){
+  if (gnp_states[floor(i/3)+1] == "State 2"){
+    s[i] = FALSE
+  }
+}
+````
+
+For states 1, we have pca 
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_1[s,])
+summary(pca)
+time = c(1,2,3,4,5)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+boom = pca$rotation[,1]
+````
+
+For states 2, we have pca,
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_1[!s,])
+summary(pca)
+time = c(1,2,3,4,5)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+recession = pca$rotation[,1]
+````
+There is no significant difference between two states. So using GNP to classify the bond market is not a good idea.  
+We can check the component of PC1 in different states.  
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+abs(recession) - abs(boom)
+```
+Even if there is only slightly difference, we can still hold the opion that in turbulence, the long-term bond could represent more in interest rate risk.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### PCA with Different Regime with SNP
+Then we can try with SNP, for state 1, we have:
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield_1 = yield_1[-1,]
+pca = prcomp(yield_1[snp_states == 'State 1',])
+summary(pca)
+time = c(1,2,3,4,5)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+boom = pca$rotation[,1]
+````
+For state 2, we have:
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_1[snp_states == 'State 2',])
+summary(pca)
+time = c(1,2,3,4,5)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+recession = pca$rotation[,1]
+````
+Actully, when using S&P index to do segment, the difference of PC in different states is still small. 
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+abs(recession) - abs(boom)
+````
+
+When using SNP, the result is different, that short-term bond could represent more in turbulent market.
+
+### Sum
+When using bond with one year increment, long-term bond always occupies more in PC1 than short-term bond. But in different states, long-term bond occupies more in turbulence using GNP, short-term bond ocupies more in turbulence using S&P. It means short-term bond is more relative with market, and long-term bond related with macro.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Monthly Fama-Bliss Data by half year
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield_2 = yield[577:792,2:13]
+names(yield_2) = c("0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "10", ">10")
+yield_2
+````
+### PCA with Different Regime with GNP
+Firstly we select the data from 2000 to 2017, using GNP classification to do PCA in differernt states.
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_2[s,])
+summary(pca)
+time = c(0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,0.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+boom = pca$rotation[,1]
+````
+We can check with PC1 and PC2, they are different but the major component is 6 years bond.
+
+For states 2, we have pca,
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_2[!s,])
+summary(pca)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,0.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+recession = pca$rotation[,1]
+````
+
+The shape is similar. We still can check PC1's numerical change. 
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+abs(recession) - abs(boom)
+````
+So in turbulence, short-term and long-term are more important than middle term in interest risk.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### PCA with Different Regime with SNP
+For regime with S&P 500, we do PCA on the whole sample from 2000 to 2017
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+yield_2 = yield_2[-1,]
+pca = prcomp(yield_2)
+summary(pca)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,0.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+```
+
+
+Then we can do PCA by regime, for state 1, we have:
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+
+pca = prcomp(yield_2[snp_states == 'State 1',])
+summary(pca)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,0.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+boom = pca$rotation[,1]
+````
+And in states 2
+
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+pca = prcomp(yield_2[snp_states == 'State 2',])
+summary(pca)
+plot(pca)
+plot(time,pca$rotation[,1],ylim=c(-0.8,.8),type="b",lwd=2,ylab="PC",xlab="T")
+lines(time,pca$rotation[,2],lty=2,type="b",lwd=2,col="red")
+recession = pca$rotation[,1]
+````
+Surprisely, the shape are totally different in 2 states. And we can check the numerical difference.
+```{r echo=FALSE, echo = FALSE, warning = FALSE, message=FALSE}
+abs(recession) - abs(boom)
+````
+All the bonds are more important except the 6 year bond, the result is contrast to GNP data.
+
+
+
+
+
+
+
+
+
+
+
+
+# Project BAML ICE effective yields on the regime PCs
+
+## BAML ICE AAA
+
+### Whole Sample
+```{r echo=FALSE, warning = FALSE, message=FALSE}
+getSymbols("BAMLC0A1CAAAEY",from = "2000-01-01", to = "2017-12-31", src='FRED')
+AAA = to.monthly(BAMLC0A1CAAAEY)/100
+AAA = AAA[,4]
+names(AAA) = c("AAA")
+AAA = window(AAA, start = 2000, end = 2018)
+AAA = AAA[-length(AAA)]
+AAA = AAA[-1]
+pca = prcomp(yield_2[,1:10])
+pc1 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg = lm(AAA~pc1+pc2)
+summary(lin_reg)
+AAA_all = lin_reg$coefficients[2]*pca$rotation[,1] + lin_reg$coefficients[3]*pca$rotation[,2]
+resid_full = lin_reg$residuals
+#par(mfrow = c(1, 2))
+#acf(resid_full, main = "Whole Sample")
+#qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+#qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 1 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 1',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_1 = lm(AAA[snp_states == 'State 1',]~pc1+pc2)
+
+summary(lin_reg_1)
+aaa_1 = lin_reg_1$coefficients[2]*pca$rotation[,1] + lin_reg_1$coefficients[3]*pca$rotation[,2]
+resid_1 = lin_reg_1$residuals
+#acf(resid_1, main = "Normal Period")
+#qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+#qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 2 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 2',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_2 = lm(AAA[snp_states == 'State 2']~pc1+pc2)
+summary(lin_reg_2)
+aaa_2 = lin_reg_2$coefficients[2]*pca$rotation[,1] + lin_reg_2$coefficients[3]*pca$rotation[,2]
+resid_2 = lin_reg_2$residuals
+#acf(resid_2, main = "Crisis Period")
+#qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+#qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### AAA residual test plot
+```{r}
+par(mfrow = c(3, 2))
+acf(resid_full, main = "Whole Sample")
+qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_1, main = "Normal Period")
+qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_2, main = "Crisis Period")
+qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+
+
+
+
+### plot residual time series
+```{r}
+plot(time(lin_reg$residuals), coredata(lin_reg$residuals), ylab = "residuals", xlab = "time (AAA)")
+points(time(lin_reg_1$residuals), coredata(lin_reg_1$residuals), col="green", ylab = "residuals", xlab = "time")
+points(time(lin_reg_2$residuals), coredata(lin_reg_2$residuals), col="red", ylab = "residuals", xlab = "time")
+legend(2013, 0.035, legend=c("whole sample", "normal","crisis"),
+       col=c("black","green", "red"), pch = c(1,1,1), cex=0.8)
+```
+
+
+## S&P 500
+```{r echo=FALSE, warning = FALSE, message=FALSE}
+snp = getSymbols("^GSPC",auto.assign = FALSE, from = "2000-01-01", to = "2017-12-31")
+snp = snp[,6]
+snp_month = to.monthly(snp)
+snp_month = snp_month[,4]
+names(snp_month) = c("price")
+r_snp_mon = na.omit(diff(snp_month) / lag(snp_month))
+date = time(r_snp_mon)
+pca = prcomp(yield_2[,1:10])
+pc1 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg = lm(r_snp_mon~pc1+pc2)
+sp_all = lin_reg$coefficients[2]*pca$rotation[,1] + lin_reg$coefficients[3]*pca$rotation[,2]
+summary(lin_reg)
+resid_full = lin_reg$residuals
+```
+### state 1 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 1',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_1 = lm(r_snp_mon[snp_states == 'State 1',]~pc1+pc2)
+sp_1 = lin_reg_1$coefficients[2]*pca$rotation[,1] + lin_reg_1$coefficients[3]*pca$rotation[,2]
+summary(lin_reg_1)
+resid_1 = lin_reg_1$residuals
+```
+
+### state 2 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 2',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_2 = lm(r_snp_mon[snp_states == 'State 2']~pc1+pc2)
+sp_2 = lin_reg_2$coefficients[2]*pca$rotation[,1] + lin_reg_2$coefficients[3]*pca$rotation[,2]
+summary(lin_reg_2)
+resid_2 = lin_reg_2$residuals
+```
+
+### plot residual time series
+```{r}
+plot(time(lin_reg$residuals), coredata(lin_reg$residuals), ylab = "residuals", xlab = "time (S&P 500)")
+points(time(lin_reg_1$residuals), coredata(lin_reg_1$residuals), col="green")
+points(time(lin_reg_2$residuals), coredata(lin_reg_2$residuals), col="red")
+```
+
+### S&P 500 residual test plot
+```{r}
+par(mfrow = c(3, 2))
+acf(resid_full, main = "Whole Sample")
+qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_1, main = "Normal Period")
+qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_2, main = "Crisis Period")
+qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+
+## BAML ICE BB
+```{r echo=FALSE, warning = FALSE, message=FALSE}
+getSymbols("BAMLH0A1HYBBEY",from = "2000-01-01", to = "2017-12-31", src='FRED')
+BB = to.monthly(BAMLH0A1HYBBEY)/100
+BB = BB[,4]
+names(BB) = c("AAA")
+BB = window(BB, start = 2000, end = 2018)
+BB = BB[-length(BB)]
+BB = BB[-1]
+pca = prcomp(yield_2[,1:10])
+pc1 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg = lm(BB~pc1+pc2)
+summary(lin_reg)
+BB_all = lin_reg$coefficients[2]*pca$rotation[,1] + lin_reg$coefficients[3]*pca$rotation[,2]
+resid_full = lin_reg$residuals
+par(mfrow = c(1, 2))
+#acf(resid_full, main = "Whole Sample")
+#qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+#qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 1 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 1',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_1 = lm(BB[snp_states == 'State 1',]~pc1+pc2)
+BB_1 = lin_reg_1$coefficients[2]*pca$rotation[,1] + lin_reg_1$coefficients[3]*pca$rotation[,2]
+summary(lin_reg_1)
+resid_1 = lin_reg_1$residuals
+#acf(resid_1, main = "Normal Period")
+#qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+#qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 2 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 2',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_2 = lm(BB[snp_states == 'State 2']~pc1+pc2)
+BB_2 = lin_reg_2$coefficients[2]*pca$rotation[,1] + lin_reg_2$coefficients[3]*pca$rotation[,2]
+summary(lin_reg_2)
+resid_2 = lin_reg_2$residuals
+#acf(resid_2, main = "Crisis Period")
+#qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+#qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### plot residual time series
+```{r}
+plot(time(lin_reg$residuals), coredata(lin_reg$residuals), ylab = "residuals", xlab = "time (BB)")
+points(time(lin_reg_1$residuals), coredata(lin_reg_1$residuals), col="green")
+points(time(lin_reg_2$residuals), coredata(lin_reg_2$residuals), col="red")
+legend(2013, 0.07, legend=c("whole sample", "normal","crisis"),
+       col=c("black","green", "red"), pch = c(1,1,1), cex=0.8)
+```
+
+### BBB residual test plot
+```{r}
+par(mfrow = c(3, 2))
+acf(resid_full, main = "Whole Sample")
+qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_1, main = "Normal Period")
+qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_2, main = "Crisis Period")
+qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+## BAML ICE CCC
+```{r echo=FALSE, warning = FALSE, message=FALSE}
+getSymbols("BAMLH0A3HYCEY",from = "2000-01-01", to = "2017-12-31", src='FRED')
+CCC = to.monthly(BAMLH0A3HYCEY)/100
+CCC = CCC[,4]
+names(CCC) = c("AAA")
+CCC = window(CCC, start = 2000, end = 2018)
+CCC = CCC[-length(CCC)]
+CCC = CCC[-1]
+pca = prcomp(yield_2[,1:10])
+pc1 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[,1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg = lm(CCC~pc1+pc2)
+summary(lin_reg)
+CCC_all = lin_reg$coefficients[2]*pca$rotation[,1] + lin_reg$coefficients[3]*pca$rotation[,2]
+resid_full = lin_reg$residuals
+#par(mfrow = c(1, 2))
+#acf(resid_full, main = "Whole Sample")
+#qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+#qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 1 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 1',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 1',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_1 = lm(CCC[snp_states == 'State 1']~pc1+pc2)
+summary(lin_reg_1)
+CCC_1 = lin_reg_1$coefficients[2]*pca$rotation[,1] + lin_reg_1$coefficients[3]*pca$rotation[,2]
+resid_1 = lin_reg_1$residuals
+#acf(resid_1, main = "Normal Period")
+#qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+#qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### state 2 Sample
+```{r}
+pca = prcomp(yield_2[snp_states == 'State 2',1:10])
+pc1 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,1])
+pc2 = as.matrix(yield_2[snp_states == 'State 2',1:10]) %*% as.vector(pca$rotation[,2])
+lin_reg_2 = lm(CCC[snp_states == 'State 2']~pc1+pc2)
+summary(lin_reg_2)
+CCC_2 = lin_reg_2$coefficients[2]*pca$rotation[,1] + lin_reg_2$coefficients[3]*pca$rotation[,2]
+resid_2 = lin_reg_2$residuals
+#acf(resid_2, main = "Crisis Period")
+#qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+#qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+### plot residual time series
+```{r}
+plot(time(lin_reg$residuals), coredata(lin_reg$residuals), ylab = "residuals", xlab = "time (CCC)")
+points(time(lin_reg_1$residuals), coredata(lin_reg_1$residuals), col="green")
+points(time(lin_reg_2$residuals), coredata(lin_reg_2$residuals), col="red")
+legend(2013, 0.20, legend=c("whole sample", "normal","crisis"),
+       col=c("black","green", "red"), pch = c(1,1,1), cex=0.8)
+```
+
+### CCC residual test plot
+```{r}
+par(mfrow = c(3, 2))
+acf(resid_full, main = "Whole Sample")
+qqnorm(resid_full, datax = FALSE, main = "Whole Sample")
+qqline(resid_full, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_1, main = "Normal Period")
+qqnorm(resid_1, datax = FALSE, main = "Normal Period")
+qqline(resid_1, datax = FALSE, lwd = 3, col = "blue")
+acf(resid_2, main = "Crisis Period")
+qqnorm(resid_2, datax = FALSE, main = "Crisis Period")
+qqline(resid_2, datax = FALSE, lwd = 3, col = "blue")
+```
+
+
+
+
+
